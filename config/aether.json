@@ -1,0 +1,143 @@
+{
+  "version": 1,
+  "model": {
+    "primary": "models/qwen2.5-3b-instruct-q4_k_m.gguf",
+    "fallback": "models/qwen2.5-1.5b-instruct-q4_k_m.gguf",
+    "auto_fallback": true
+  },
+  "llama": {
+    "server": "runtime/llama/llama-server.exe",
+    "host": "127.0.0.1",
+    "port": 8181,
+    "gpu_layers": 99,
+    "context": 8192,
+    "adaptive_context": true,
+    "threads": 6,
+    "batch": 512,
+    "ubatch": 256,
+    "flash_attn": true,
+    "kv_cache_type": "q8_0",
+    "start_timeout": 150,
+    "extra_args": ["--jinja", "--no-warmup"]
+  },
+  "generation": {
+    "temperature": 0.2,
+    "top_p": 0.9,
+    "max_tokens": 2048,
+    "coding_max_tokens": 3072,
+    "coding_temperature": 0.1,
+    "repeat_penalty": 1.08,
+    "max_continuations": 1,
+    "research_max_tokens": 3000,
+    "research_temperature": 0.3
+  },
+  "memory": {
+    "db": "data/aether.db",
+    "retrieval_chunks": 8,
+    "max_context_chars": 9000,
+    "max_message_chars": 6000,
+    "history_turns": 10
+  },
+  "index": {
+    "folders": [],
+    "extensions": [".txt", ".md", ".rst", ".py", ".c", ".h", ".cpp", ".hpp", ".cs", ".js", ".ts", ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".csv", ".tsv", ".log", ".tex", ".pdf", ".docx", ".xlsx", ".pptx", ".eml"],
+    "exclude_dirs": [".git", ".venv", "venv", "node_modules", "__pycache__", "build", "dist", ".cache", "AppData", "Windows", "Program Files"],
+    "max_file_mb": 10
+  },
+  "voice": {
+    "enabled": true,
+    "auto_start": true,
+    "always_listen": true,
+    "continuous": true,
+    "followup_timeout_s": 8,
+    "turn_timeout_s": 120,
+    "wake_word": "hey thambi",
+    "mic_device": null,
+    "sample_rate": 16000,
+    "whisper_binary": "runtime/whisper/whisper-cli.exe",
+    "whisper_model": "models/ggml-base.en.bin",
+    "piper_model": "models/piper/en_US-lessac-medium.onnx",
+    "kws_model_dir": "models/kws",
+    "vad_silence_ms": 900,
+    "vad_threshold": 0.012,
+    "vad_start_timeout_s": 6,
+    "max_record_seconds": 15,
+    "wake_threshold": 0.25,
+    "whisper_threads": 6,
+    "tts_enabled": true,
+    "stream_tts": true
+  },
+  "idle": {
+    "enabled": true,
+    "timeout_s": 45,
+    "lazy_model": true,
+    "unload_model_after_s": 900,
+    "priority": true,
+    "trim_memory": true,
+    "kws_threads": 1,
+    "energy_gate": true,
+    "energy_threshold": 0.006,
+    "pre_roll_blocks": 3
+  },
+  "utcp": {
+    "enabled": true,
+    "host": "127.0.0.1",
+    "port": 8191,
+    "token": "",
+    "allow_remote": false
+  },
+  "safety": {
+    "allow_external_research": true,
+    "allow_imap_read": false,
+    "confirm_writes": true,
+    "allowed_roots": [],
+    "app_allowlist": {
+      "notepad": "notepad.exe",
+      "calculator": "calc.exe",
+      "explorer": "explorer.exe",
+      "word": "winword.exe",
+      "excel": "excel.exe",
+      "powerpoint": "powerpnt.exe",
+      "code": "code.cmd",
+      "kicad": "C:/Program Files/KiCad/10.0/bin/kicad.exe",
+      "paint": "mspaint.exe",
+      "edge": "msedge.exe",
+      "chrome": "chrome.exe"
+    }
+  },
+  "email": {
+    "imap_host": "",
+    "imap_port": 993,
+    "imap_folder": "INBOX",
+    "imap_user_env": "AETHER_IMAP_USER",
+    "imap_password_env": "AETHER_IMAP_PASSWORD"
+  },
+  "learning": {
+    "enabled": true,
+    "auto_learn": true,
+    "max_rules": 12,
+    "min_confidence": 0.35,
+    "feedback_enabled": true
+  },
+  "documents": {
+    "ocr_language": "eng",
+    "ocr_enabled": true,
+    "max_pages": 40,
+    "max_chars": 30000,
+    "soffice": "C:/Program Files/LibreOffice/program/soffice.exe"
+  },
+  "designer": {
+    "canva_url": "https://www.canva.com/",
+    "default_theme": "midnight",
+    "default_ratio": "16:9"
+  },
+  "paths": {
+    "ngspice": "",
+    "openems": "",
+    "kicad_cli": "C:/Program Files/KiCad/10.0/bin/kicad-cli.exe"
+  },
+  "ui": {
+    "theme": "dark",
+    "max_chat_chars": 12000
+  }
+}
