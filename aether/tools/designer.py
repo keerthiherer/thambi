@@ -596,7 +596,7 @@ def _normalize_slide(item: dict[str, Any]) -> dict[str, Any]:
     raw = _value(spec.get("content") or spec.get("body") or "")
     declared = spec.get("type") or spec.get("kind") or "content"
     kind = _slide_kind(declared)
-    if _slide_key(declared) in _SLIDE_ALIASES:
+    if _slide_key(declared) in _SLIDE_ALIASES or kind != "content":
         spec["type"] = kind
     if not raw:
         return spec
@@ -829,9 +829,11 @@ def _pitch_spec(topic: str, audience: str, theme: str, count: int,
          ]},
         {"type": "content", "title": "Why it works", "points": points,
          "callout": "Use only facts you can defend."},
-        {"type": "stats", "title": "Traction - replace placeholders",
-         "stats": {"—": "Pilot users", "—": "Revenue or savings", "—": "Retention"},
-         "note": "Placeholder metrics; do not present as real data."},
+         {"type": "stats", "title": "Traction - replace placeholders",
+          "stats": [{"value": "—", "label": "Pilot users"},
+                    {"value": "—", "label": "Revenue or savings"},
+                    {"value": "—", "label": "Retention"}],
+          "note": "Placeholder metrics; do not present as real data."},
         {"type": "timeline", "title": "Roadmap",
          "steps": ["Validate", "Pilot", "Launch", "Scale"]},
         {"type": "comparison", "title": "Why us",
@@ -1002,8 +1004,9 @@ def open_design_app(app: str) -> str:
     key = str(app or "").strip().lower()
     if key == "canva":
         url = str(get("designer.canva_url", "https://www.canva.com/") or "https://www.canva.com/")
-        safety.require_external("allow_external_research", "Open Canva?",
-                                f"The default browser will open {url}. No local data is sent.")
+        if not safety.require_external("allow_external_research", "Open Canva?",
+                                       f"The default browser will open {url}. No local data is sent."):
+            raise PermissionError("External browser access was denied by the user")
         if not webbrowser.open(url, new=2):
             raise RuntimeError("No browser could be opened for Canva")
         return f"Opened Canva: {url}"

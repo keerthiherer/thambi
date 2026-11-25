@@ -11,6 +11,16 @@ _APPROVED_PROCS = {
     "code.exe", "kicad.exe", "eeschema.exe", "pcbnew.exe", "explorer.exe",
 }
 
+_TYPE_KEYS_SPECIAL = {
+    "{": "{{}", "}": "{}}", "+": "{+}", "^": "{^}", "%": "{%}", "~": "{~}",
+    "(": "{(}", ")": "{)}", "[": "{[}", "]": "{]}",
+}
+
+
+def _escape_type_keys(value: str) -> str:
+    flat = str(value or "").replace("\r\n", " ").replace("\r", " ").replace("\n", " ").replace("\t", " ")
+    return "".join(_TYPE_KEYS_SPECIAL.get(ch, ch) for ch in flat)
+
 
 @register("open_app", "Open an application from the approved allowlist after confirmation.",
           {"name": "approved app key, e.g. notepad, word, excel, kicad"}, ["name"],
@@ -84,10 +94,10 @@ def focus_window(title: str) -> str:
     if psutil:
         try:
             proc = psutil.Process(w.element_info.process_id).name().lower()
-            if proc not in _APPROVED_PROCS:
-                raise PermissionError(f"Window process '{proc}' is not in the approved application set")
-        except Exception:
-            pass
+        except Exception as e:
+            raise PermissionError(f"Could not verify window process: {e}") from e
+        if proc not in _APPROVED_PROCS:
+            raise PermissionError(f"Window process '{proc}' is not in the approved application set")
     if not safety.require_confirmation("Focus window?", f"{w.window_text()}", action="focus_window"):
         raise PermissionError("Focus denied by user")
     w.set_focus()
@@ -118,8 +128,8 @@ def type_text(title: str, text: str) -> str:
             ):
                 raise PermissionError("Typing denied by user")
             w.set_focus()
-            w.type_keys(text, with_spaces=True, set_foreground=True)
-            return f"Typed {len(text)} characters into '{t}' (no Enter sent)"
+            w.type_keys(_escape_type_keys(text), with_spaces=True, set_foreground=True)
+            return f"Typed {len(text)} characters into '{t}' (newlines converted to spaces; no Enter sent)"
         except PermissionError:
             raise
         except Exception:

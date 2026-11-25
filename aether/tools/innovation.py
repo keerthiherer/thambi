@@ -149,7 +149,7 @@ def _novelty_readout(idea: str, rows: list[str], items: list[dict[str, str]]) ->
           {"idea": "idea or concept to check", "field": "field or domain filter (optional)",
            "years": "date filter text such as 2022-2026 (optional)", "sources": "number of sources (default 6, max 10)",
            "index": "true to index fetched sources into local memory (default true)"},
-          ["idea"], category="innovation", dangerous=True, read_only=True)
+          ["idea"], category="innovation", dangerous=True, read_only=False)
 def prior_art_search(idea: str, field: str = "", years: str = "", sources: int | str = 6,
                      index: bool | str = True) -> str:
     concept = _clean(idea)
@@ -170,11 +170,12 @@ def prior_art_search(idea: str, field: str = "", years: str = "", sources: int |
         source_count = min(10, max(2, int(sources)))
     except (TypeError, ValueError):
         source_count = 6
-    safety.require_external(
+    if not safety.require_external(
         "allow_external_research", "Run prior-art search?",
         f"Idea: {concept[:500]}\nSearches: {len(angles)}\n"
         "Public web searches and page fetches will be performed. No private data is sent.",
-    )
+    ):
+        raise PermissionError("External research was denied by the user")
     pooled, log = _search_pool(angles, 5)
     if not pooled:
         raise RuntimeError("Prior-art search found no usable results")
@@ -237,11 +238,12 @@ def patent_search(idea: str, jurisdiction: str = "US", status: str = "all", limi
         result_limit = min(12, max(2, int(limit)))
     except (TypeError, ValueError):
         result_limit = 8
-    safety.require_external(
+    if not safety.require_external(
         "allow_external_research", "Run patent search?",
         f"Idea: {concept[:500]}\nJurisdiction: {jur}\nStatus: {status}\n"
         "Public patent search results will be opened. No private data is sent.",
-    )
+    ):
+        raise PermissionError("External research was denied by the user")
     pooled, log = _search_pool(angles, 6)
     if not pooled:
         raise RuntimeError("Patent search found no usable results")

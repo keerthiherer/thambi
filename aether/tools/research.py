@@ -193,11 +193,12 @@ def deep_web_research(question: str, queries: int | str = 4, sources: int | str 
     except (TypeError, ValueError):
         source_count = 5
     angles = _research_angles(base, query_count)
-    safety.require_external(
+    if not safety.require_external(
         "allow_external_research", "Run multi-source web research?",
         f"Question: {base[:500]}\nSearches: {len(angles)}\n"
         "Several public web searches and page fetches will be performed. No local files or private data are sent.",
-    )
+    ):
+        raise PermissionError("External research was denied by the user")
     pooled: list[dict[str, str]] = []
     seen_urls: set[str] = set()
     search_lines: list[str] = []
@@ -368,6 +369,25 @@ def _extract_claims(text: str) -> list[str]:
     return claims
 
 
+def _claim_tokens(text: str) -> set[str]:
+    words = re.findall(r"[a-z0-9]+", str(text).lower())
+    tokens = {word for word in words if len(word) >= 4 and word not in _STOPWORDS}
+    return tokens or {word for word in words if len(word) > 2}
+
+
+def _best_source_for_claim(claim: str, sources: list[dict[str, str]]) -> tuple[dict[str, str] | None, float]:
+    tokens = _claim_tokens(claim)
+    best: dict[str, str] | None = None
+    best_score = 0.0
+    for source in sources:
+        haystack = " ".join([source["title"], source["snippet"], source["context"]]).lower()
+        source_words = set(re.findall(r"[a-z0-9]+", haystack))
+        score = len(tokens & source_words) / max(1, len(tokens))
+        if score > best_score:
+            best_score, best = score, source
+    return best, best_score
+
+
 def _has_contradiction(text: str) -> bool:
     cues = ("however", "contrary", "contradict", "disagree", "but not", "failed", "no evidence",
             "not supported", "unsupported")
@@ -406,9 +426,13 @@ def research_matrix(brief: str, max_rows: int | str = 12) -> str:
         "|---|---|---|---|---|",
     ]
     for index, claim in enumerate(claims[:limit], 1):
-        source = sources[(index - 1) % len(sources)]
-        rows.append(f"| {index} | {claim[:220]} | {source['handle']} | {source['domain']} | "
-                    f"{_dominant_confidence(source, text)} |")
+        match, score = _best_source_for_claim(claim, sources)
+        assigned = bool(match and score >= 0.15)
+        handle = match["handle"] if assigned else "unassigned"
+        domain = match["domain"] if assigned else "-"
+        source_text = " ".join([match["title"], match["snippet"], match["context"]]) if assigned else ""
+        confidence = _dominant_confidence(match, source_text) if assigned else "unknown"
+        rows.append(f"| {index} | {claim[:220]} | {handle} | {domain} | {confidence} |")
     domains = sorted({s["domain"] for s in sources})
     contradictions = "Detected; treat low-confidence rows as disputed." if _has_contradiction(text) else "No contradiction cues detected."
     gaps: list[str] = []
@@ -447,10 +471,7 @@ def claim_verifier(claim: str, evidence: str, min_sources: int | str = 2) -> str
         raise ValueError("Claim is required")
     text = str(evidence or "")
     sources = _parse_sources(text)
-    tokens = {word for word in re.findall(r"[a-z0-9]+", statement.lower())
-              if len(word) >= 4 and word not in _STOPWORDS}
-    if not tokens:
-        tokens = {word for word in re.findall(r"[a-z0-9]+", statement.lower()) if len(word) > 2}
+    tokens = _claim_tokens(statement)
     try:
         required = min(5, max(1, int(min_sources)))
     except (TypeError, ValueError):
@@ -458,12 +479,13 @@ def claim_verifier(claim: str, evidence: str, min_sources: int | str = 2) -> str
     scored: list[tuple[float, dict[str, str], bool, str]] = []
     for source in sources:
         haystack = " ".join([source["title"], source["snippet"], source["context"]]).lower()
-        overlap = sum(1 for token in tokens if token in haystack) / max(1, len(tokens))
-        matched = sorted(token for token in tokens if token in haystack)
+        source_words = set(re.findall(r"[a-z0-9]+", haystack))
+        overlap = len(tokens & source_words) / max(1, len(tokens))
+        matched = sorted(tokens & source_words)
         negated = overlap >= 0.25 and _has_contradiction(haystack)
         scored.append((overlap, source, negated, ", ".join(matched[:8])))
-    supporting = [item for item in scored if item[0] >= 0.34 and not item[2]]
-    partial = [item for item in scored if 0.18 <= item[0] < 0.34 and not item[2]]
+    supporting = [item for item in scored if item[0] >= 0.75 and not item[2]]
+    partial = [item for item in scored if 0.4 <= item[0] < 0.75 and not item[2]]
     support_domains = {item[1]["domain"] for item in supporting}
     if not sources:
         verdict = "INSUFFICIENT EVIDENCE"
@@ -529,11 +551,15 @@ def _write_report_pdf(path: Path, title: str, content: str) -> None:
     except ImportError as e:
         raise RuntimeError("reportlab is not installed") from e
     styles = getSampleStyleSheet()
-    document = SimpleDocTemplate(str(path), pagesize=A4, margins=(18 * mm, 18 * mm, 18 * mm, 18 * mm))
-    story = [Paragraph(title, styles["Title"]), Spacer(1, 8)]
+    document = SimpleDocTemplate(str(path), pagesize=A4,
+                                 leftMargin=18 * mm, rightMargin=18 * mm,
+                                 topMargin=18 * mm, bottomMargin=18 * mm)
+    def _safe(value: str) -> str:
+        return str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    story = [Paragraph(_safe(title), styles["Title"]), Spacer(1, 8)]
     for line in content.splitlines():
         if line.strip():
-            safe = line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            safe = _safe(line)
             story.append(Paragraph(safe, styles["BodyText"]))
             story.append(Spacer(1, 4))
     document.build(story)

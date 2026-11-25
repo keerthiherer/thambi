@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import getpass
+import ipaddress
 import json
 import os
 import subprocess
+import tempfile
 import threading
 import time
 from datetime import datetime, timezone
@@ -76,7 +78,7 @@ def require_confirmation(title: str, detail: str, action: str = "") -> bool:
 
 def allowed_roots() -> list[Path]:
     cfg = load()
-    roots = [ROOT]
+    roots = [ROOT, Path(tempfile.gettempdir()).resolve()]
     for r in cfg["safety"].get("allowed_roots") or []:
         p = resolve(r).resolve()
         if p.exists() and p.is_dir():
@@ -125,12 +127,7 @@ def validate_write(path: str | Path, must_exist: bool = False) -> Path:
 
 
 def validate_read(path: str | Path) -> Path:
-    p = Path(path).expanduser()
-    if not p.is_absolute():
-        p = (ROOT / p)
-    p = p.resolve()
-    if not p.exists():
-        raise FileNotFoundError(str(p))
+    p = validate_path(path, must_exist=True)
     if p.is_dir():
         raise IsADirectoryError(str(p))
     return p
@@ -152,6 +149,13 @@ def validate_http_url(value: str, label: str = "URL") -> str:
     host = (parsed.hostname or "").lower().rstrip(".")
     if host in _PLACEHOLDER_HOSTS or host.endswith((".example", ".invalid", ".localhost", ".test")):
         raise ValueError(f"{label} is a placeholder or local URL, not a public web address")
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        address = None
+    if address and (address.is_private or address.is_loopback or address.is_link_local
+                    or address.is_reserved or address.is_unspecified or address.is_multicast):
+        raise ValueError(f"{label} must be a public web address, not {host}")
     return url
 
 

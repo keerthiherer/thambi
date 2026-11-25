@@ -22,6 +22,13 @@ def _rel(p: Path) -> str:
         return str(p)
 
 
+def _validate_dir(path: str | Path) -> Path:
+    p = safety.validate_path(path)
+    if not p.is_dir():
+        raise NotADirectoryError(str(p))
+    return p
+
+
 def _as_text(value: object, name: str) -> str:
     if isinstance(value, str):
         return value
@@ -40,12 +47,7 @@ def hardware_report() -> str:
 @register("list_dir", "List files and folders in a directory.",
           {"path": "directory path (default .)"}, category="files")
 def list_dir(path: str = ".") -> str:
-    p = Path(path).expanduser()
-    if not p.is_absolute():
-        p = ROOT / p
-    p = p.resolve()
-    if not p.is_dir():
-        raise NotADirectoryError(str(p))
+    p = _validate_dir(path)
     entries = []
     for child in sorted(p.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower()))[:500]:
         try:
@@ -84,12 +86,7 @@ def read_file(path: str, start: int | str = 1, limit: int | str = 300) -> str:
           ["query"], category="files")
 def search_files(query: str, root: str = ".", glob: str = "*", content: bool | str = False,
                  max_results: int | str = 30) -> str:
-    base = Path(root).expanduser()
-    if not base.is_absolute():
-        base = ROOT / base
-    base = base.resolve()
-    if not base.is_dir():
-        raise NotADirectoryError(str(base))
+    base = _validate_dir(root)
     content = content is True or str(content).lower() in ("1", "true", "yes")
     max_results = min(200, max(1, int(max_results)))
     cfg = load()
@@ -127,12 +124,7 @@ def search_files(query: str, root: str = ".", glob: str = "*", content: bool | s
 @register("project_overview", "Summarise a code project: languages, build files, git status, README.",
           {"root": "project folder (default .)"}, category="coding")
 def project_overview(root: str = ".") -> str:
-    base = Path(root).expanduser()
-    if not base.is_absolute():
-        base = ROOT / base
-    base = base.resolve()
-    if not base.is_dir():
-        raise NotADirectoryError(str(base))
+    base = _validate_dir(root)
     counts: dict[str, int] = {}
     total = 0
     markers = []
@@ -210,7 +202,7 @@ def create_folder(path: str) -> str:
 @register("delete_path", "Move a file or folder to the Recycle Bin after explicit confirmation.",
           {"path": "file or folder path"}, ["path"], category="files", dangerous=True, read_only=False)
 def delete_path(path: str) -> str:
-    p = safety.validate_write(path, must_exist=True)
+    p = safety.validate_path(path, must_exist=True)
     if p == ROOT or p.parent == p:
         raise PermissionError("Refusing to delete a root or the THAMBI project")
     if not safety.require_confirmation(
@@ -257,12 +249,7 @@ def _recycle(path: Path) -> None:
 @register("index_folder", "Index a folder into local searchable memory (read-only).",
           {"path": "folder to index"}, ["path"], category="memory", read_only=False)
 def index_folder(path: str) -> str:
-    p = Path(path).expanduser()
-    if not p.is_absolute():
-        p = ROOT / p
-    p = p.resolve()
-    if not p.is_dir():
-        raise NotADirectoryError(str(p))
+    p = _validate_dir(path)
     report = index_folders([p], default_memory())
     msg = (f"Indexed {report['indexed']} new/changed, {report['skipped']} unchanged, "
            f"{report['chunks']} chunks, {report['removed']} removed.")

@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 
 from .. import safety
-from ..config import get
 from .. import utcp
 from .registry import register
 
@@ -23,7 +22,7 @@ def utcp_list(url: str) -> str:
         f"{url}\n\nOnly the manual JSON is downloaded. No local data is sent.",
     ):
         raise PermissionError("External UTCP manual denied")
-    manual = utcp.fetch_manual(url, token=str(get("utcp.token", "") or ""))
+    manual = utcp.fetch_manual(url)
     rows = []
     for t in manual.get("tools", []):
         rows.append(f"- {t.get('name')}: {t.get('description', '')}")
@@ -43,5 +42,5 @@ def utcp_call(url: str, tool: str, args: str | dict = "") -> str:
         parsed = args or {}
     if not isinstance(parsed, dict):
         raise ValueError("args must be a JSON object")
-    result = utcp.call_remote(url, tool, parsed, token=str(get("utcp.token", "") or ""))
+    result = utcp.call_remote(url, tool, parsed)
     return json.dumps(result, indent=2, ensure_ascii=False)

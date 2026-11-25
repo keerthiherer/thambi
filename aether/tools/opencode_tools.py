@@ -251,8 +251,9 @@ def _web_search_items(query: str, limit: int = 5) -> list[dict[str, str]]:
           {"query": "search query", "max_results": "limit (default 5)"}, ["query"],
           category="opencode")
 def web_search(query: str, max_results: int | str = 5) -> str:
-    safety.require_external("allow_external_research", "Web search",
-                            f"Search the web for: {query[:500]}")
+    if not safety.require_external("allow_external_research", "Web search",
+                                   f"Search the web for: {query[:500]}"):
+        raise PermissionError("Web search was denied by the user")
     items = _web_search_items(query, max_results)
     if not items:
         return f"Web results for '{query}':\n- No usable results returned. Try a broader query."
@@ -264,7 +265,8 @@ def web_search(query: str, max_results: int | str = 5) -> str:
           {"url": "http(s) URL", "max_chars": "limit (default 12000)"}, ["url"], category="opencode")
 def web_fetch(url: str, max_chars: int | str = 12000) -> str:
     url = _http_url(url)
-    safety.require_external("allow_external_research", "Web fetch", f"Fetch URL: {url[:500]}")
+    if not safety.require_external("allow_external_research", "Web fetch", f"Fetch URL: {url[:500]}"):
+        raise PermissionError("Web fetch was denied by the user")
     try:
         r = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0 (THAMBI local assistant)"})
     except requests.RequestException as e:
@@ -290,8 +292,9 @@ def web_fetch(url: str, max_chars: int | str = 12000) -> str:
 @register("internet_status", "Check outbound internet connectivity and proxy presence (requires internet access approval).",
           {}, category="opencode")
 def internet_status() -> str:
-    safety.require_external("allow_external_research", "Check internet connectivity?",
-                            "A harmless request will be sent to DuckDuckGo. No local data is sent.")
+    if not safety.require_external("allow_external_research", "Check internet connectivity?",
+                                   "A harmless request will be sent to DuckDuckGo. No local data is sent."):
+        raise PermissionError("Internet access was denied by the user")
     started = time.perf_counter()
     try:
         r = requests.get("https://duckduckgo.com/", timeout=10,
@@ -311,8 +314,9 @@ def internet_status() -> str:
           dangerous=True, read_only=False)
 def browser_open(url: str) -> str:
     url = _http_url(url, "Browser URL")
-    safety.require_external("allow_external_research", "Open URL in browser?",
-                            f"The system default browser will open: {url[:500]}")
+    if not safety.require_external("allow_external_research", "Open URL in browser?",
+                                   f"The system default browser will open: {url[:500]}"):
+        raise PermissionError("Browser access was denied by the user")
     try:
         opened = webbrowser.open(url, new=2)
     except Exception as e:

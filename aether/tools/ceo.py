@@ -28,13 +28,18 @@ def import_email(path: str) -> str:
     if not p.is_absolute():
         p = ROOT / p
     p = p.resolve()
+    if not safety.within(p, safety.allowed_roots()):
+        raise PermissionError(f"Path is outside allowed roots: {p}")
     if not p.exists():
         raise FileNotFoundError(str(p))
     mem = default_memory()
     files: list[Path] = []
     if p.is_dir():
-        files = [f for f in p.rglob("*") if f.suffix.lower() in (".eml", ".mbox")]
+        files = [f for f in p.rglob("*")
+                 if f.suffix.lower() in (".eml", ".mbox") and safety.within(f, safety.allowed_roots())]
     else:
+        if p.suffix.lower() not in (".eml", ".mbox"):
+            raise ValueError(f"Only .eml and .mbox files can be imported: {p}")
         files = [p]
     imported = 0
     errors = []

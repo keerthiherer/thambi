@@ -175,10 +175,7 @@ def _as_paths(value: list | str | None) -> list[Path]:
             raw = [item.strip() for item in re.split(r"[,\n]", text) if item.strip()]
     paths: list[Path] = []
     for item in raw[:60]:
-        p = Path(item).expanduser()
-        if not p.is_absolute():
-            p = ROOT / p
-        p = p.resolve()
+        p = safety.validate_path(item)
         if p.is_dir():
             paths.extend(sorted(q for q in p.rglob("*") if q.is_file() and q.suffix.lower() in _CODE_SUFFIXES)[:60])
         elif p.is_file():

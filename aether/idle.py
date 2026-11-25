@@ -93,10 +93,17 @@ class IdleManager:
             return
         try:
             self.server.stop()
+            try:
+                still_running = bool(self.server.is_running())
+            except Exception:
+                still_running = False
+            if still_running:
+                self.on_state("Idle unload failed - model server is externally managed")
+                return
             self._unloaded = True
             self.on_state("Model unloaded (idle) - will reload on next request")
-        except Exception:
-            pass
+        except Exception as e:
+            self.on_state(f"Idle unload failed: {e}")
 
     def _loop(self) -> None:
         while not self._stopped.is_set():

@@ -279,7 +279,11 @@ def discover_files(folders: Iterable[str | Path], cfg: dict | None = None) -> li
             p = str(r.get("p", ""))
             if not p:
                 continue
-            if any(part.lower() in exclude for part in Path(p).parts):
+            try:
+                rel = Path(p).resolve().relative_to(fp)
+            except (ValueError, OSError):
+                continue
+            if any(part.lower() in exclude for part in rel.parts[:-1]):
                 continue
             if Path(p).suffix.lower() not in exts:
                 continue
@@ -291,11 +295,26 @@ def discover_files(folders: Iterable[str | Path], cfg: dict | None = None) -> li
     return files
 
 
+def _under_any(path: str, roots: list[str]) -> bool:
+    try:
+        p = Path(path).resolve()
+    except OSError:
+        return False
+    for root in roots:
+        try:
+            p.relative_to(Path(root).resolve())
+            return True
+        except (ValueError, OSError):
+            continue
+    return False
+
+
 def index_folders(folders: Iterable[str | Path], mem: Memory | None = None,
                   progress: Callable[[str], None] | None = None) -> dict:
     mem = mem or default_memory()
     cfg = load()
-    files = discover_files(folders, cfg)
+    roots = [str(Path(f).resolve()) for f in folders]
+    files = discover_files(roots, cfg)
     state = mem.document_state()
     report = {"scanned": len(files), "indexed": 0, "skipped": 0, "errors": [], "chunks": 0, "removed": 0}
     present = set()
@@ -329,7 +348,7 @@ def index_folders(folders: Iterable[str | Path], mem: Memory | None = None,
             report["chunks"] += len(chunks)
         except Exception as e:
             report["errors"].append({"path": path, "error": str(e)})
-    report["removed"] = mem.remove_missing_documents(present)
+    report["removed"] = mem.remove_missing_documents(present, scanned_roots=roots)
     return report
 
 

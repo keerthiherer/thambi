@@ -49,7 +49,8 @@ def _lower(text: Any) -> str:
 
 def _matches(text: str, terms: tuple[str, ...]) -> list[str]:
     low = _lower(text)
-    return [term for term in terms if term in low]
+    return [term for term in terms
+            if re.search(rf"(?<!\w){re.escape(_lower(term))}(?!\w)", low)]
 
 
 def _confidence(count: int) -> str:

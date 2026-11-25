@@ -183,7 +183,7 @@ def _read_book(path: Path, start: int, pages: int, use_ocr: bool) -> tuple[str, 
             text, lines = _ocr_image_object(img.convert("RGB"))
         meta.update({"ocr_lines": lines})
         return text, meta
-    if suffix in (".doc", ".dot", ".rtf"):
+    if suffix in (".doc", ".dot"):
         converted = _convert_with_soffice(path, "docx")
         meta["converted_from"] = suffix
         return extract_core(converted), meta
@@ -302,6 +302,8 @@ def _chapters(value: list | str) -> list[dict]:
                 "title": str(item.get("title") or f"Chapter {i}"),
                 "content": str(item.get("content") or ""),
             })
+        else:
+            result.append({"title": f"Chapter {i}", "content": str(item)})
     return result
 
 

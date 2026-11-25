@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import ctypes
 import json
 import queue
@@ -258,7 +259,7 @@ class AetherUI:
         tk.Label(mode, text="MODE", bg=BG, fg=MUTED, font=("Segoe UI", 8, "bold")).pack(anchor="w")
         self.module_box = ttk.Combobox(mode, textvariable=self.module, state="readonly", width=12,
                                        values=["chat", "research", "coding", "designer", "ece", "desktop", "ceo",
-                                               "psychology", "hr", "voice"])
+                                               "psychology", "hr", "paper", "rd", "voice"])
         self.module_box.pack(pady=(2, 0))
         self.module_box.bind("<<ComboboxSelected>>", lambda e: self._module_changed())
 
@@ -274,7 +275,8 @@ class AetherUI:
         for text, mod in (("Chat", "chat"), ("Research", "research"), ("Coding", "coding"),
                           ("Designer", "designer"), ("ECE / Hardware", "ece"),
                           ("Desktop", "desktop"), ("CEO / Melouz", "ceo"),
-                          ("Psychology", "psychology"), ("HR / People", "hr")):
+                          ("Psychology", "psychology"), ("HR / People", "hr"),
+                          ("Paper", "paper"), ("R&D", "rd")):
             self._module_button(side, text, mod)
 
         self._divider(side)
@@ -552,14 +554,17 @@ class AetherUI:
     def _detect_server(self) -> None:
         if self.server.health(0.4):
             try:
-                self.server.active_model = resolve(get("model.primary"))
-                self.q.put(("model", self.server.active_model))
+                self.server.active_model = self.server.attached_model()
             except Exception:
-                pass
+                self.server.active_model = None
+            self.q.put(("model", self.server.active_model))
             self.q.put(("status", "Ready (model already running)"))
 
     def _ensure_server_async(self) -> None:
-        if self.server.health(0.4) or self._starting_server:
+        if self._starting_server:
+            return
+        if self.server.health(0.4):
+            self._detect_server()
             return
         self._starting_server = True
 
@@ -654,6 +659,8 @@ class AetherUI:
             "ceo": "Company productivity",
             "psychology": "Emotion, behaviour and wellbeing",
             "hr": "People operations and HR",
+            "paper": "Paper writing and literature review",
+            "rd": "R&D planning and experiments",
             "voice": "Voice-first conversation",
         }
         if hasattr(self, "module_hint_var"):
@@ -723,10 +730,13 @@ class AetherUI:
         mode_commands = (
             ("/research", "research"), ("/psychology", "psychology"), ("/psych", "psychology"),
             ("/coach", "psychology"), ("/hr", "hr"), ("/people", "hr"),
+            ("/paper", "paper"), ("/rd", "rd"),
         )
         for prefix, target in mode_commands:
             if lowered.startswith(prefix):
                 module = target
+                if module != self.module.get():
+                    self.set_module(module)
                 break
         needs_model = not text.strip().startswith("/") or any(lowered.startswith(p) for p, _ in mode_commands)
 
@@ -741,7 +751,7 @@ class AetherUI:
                 if needs_model and self.voice_active and self.voice:
                     streaming = self.voice.begin_stream()
                     if streaming:
-                        self.live_var.set("speaking live")
+                        self.q.put(("live", "speaking live"))
 
                 def emit_token(token: str) -> None:
                     self.q.put(("token", token))
@@ -834,7 +844,8 @@ class AetherUI:
                     if "unloaded" in str(payload).lower():
                         self.model_var.set("Model: idle (starts on first use)")
                 elif kind == "model":
-                    self.model_var.set(f"Model: {Path(payload).stem}")
+                    label = f"Model: {Path(payload).stem}" if payload else "Model: attached (identity unknown)"
+                    self.model_var.set(label)
                     self._set_dot(GREEN)
                 elif kind == "done":
                     self.idle.touch()
@@ -855,6 +866,13 @@ class AetherUI:
                         self.voice.turn_finished()
                 elif kind == "tooltext":
                     self.append(payload, "assistant")
+                elif kind == "live":
+                    self.live_var.set(payload)
+                elif kind == "health":
+                    text, server_up = payload
+                    if text:
+                        self.stats_label.configure(text=text)
+                    self._set_dot(GREEN if server_up else MUTED)
                 elif kind == "voice_state":
                     state = payload.lower()
                     self.voice_active = not any(x in state for x in ("off", "error", "setup needed", "disabled"))
@@ -877,22 +895,30 @@ class AetherUI:
             self._set_dot(YELLOW)
             self.root.after(30000, self._update_health)
             return
-        try:
-            h = probe()
-            st = self.mem.index_stats()
-            gpu = h["gpus"][0] if h["gpus"] else {}
-            server_up = self.server.health(0.4)
-            server_state = "up" if server_up else "not loaded"
-            self.stats_label.configure(
-                text=(f"RAM   {h['ram']['available_gb']:.1f} / {h['ram']['total_gb']:.1f} GB\n"
-                      f"VRAM  {gpu.get('vram_free_mb', '?')} MB free\n"
-                      f"Docs  {st['documents']}  |  chunks {st['chunks']}\n"
-                      f"Memories  {st['memories']}\n"
-                      f"Server  {server_state}")
-            )
-            self._set_dot(GREEN if server_up else MUTED)
-        except Exception:
-            self._set_dot(MUTED)
+        if getattr(self, "_health_busy", False):
+            self.root.after(10000, self._update_health)
+            return
+        self._health_busy = True
+
+        def work():
+            try:
+                h = probe()
+                st = self.mem.index_stats()
+                gpu = h["gpus"][0] if h["gpus"] else {}
+                server_up = bool(self.server.health(0.4))
+                server_state = "up" if server_up else "not loaded"
+                text = (f"RAM   {h['ram']['available_gb']:.1f} / {h['ram']['total_gb']:.1f} GB\n"
+                        f"VRAM  {gpu.get('vram_free_mb', '?')} MB free\n"
+                        f"Docs  {st['documents']}  |  chunks {st['chunks']}\n"
+                        f"Memories  {st['memories']}\n"
+                        f"Server  {server_state}")
+                self.q.put(("health", (text, server_up)))
+            except Exception:
+                self.q.put(("health", (None, False)))
+            finally:
+                self._health_busy = False
+
+        threading.Thread(target=work, daemon=True).start()
         self.root.after(10000, self._update_health)
 
     # ---------------- confirmation / tools ----------------
@@ -916,7 +942,7 @@ class AetherUI:
             if not isinstance(body, str):
                 body = json.dumps(body, indent=2, ensure_ascii=False)
             self.q.put(("tooltext", f"\nTool: {name}\n{body}\n"))
-            self.status_var.set("Ready")
+            self.q.put(("status", "Ready"))
         threading.Thread(target=work, daemon=True).start()
 
     def search_dialog(self) -> None:
@@ -932,7 +958,7 @@ class AetherUI:
                 res = execute("index_folder", {"path": folder})
                 body = res.get("result") if res.get("ok") else f"ERROR: {res.get('error')}"
                 self.q.put(("tooltext", f"\nIndex: {folder}\n{body}\n"))
-                self.status_var.set("Indexing complete")
+                self.q.put(("status", "Indexing complete"))
             threading.Thread(target=work, daemon=True).start()
 
     def reindex_configured(self) -> None:
@@ -1177,48 +1203,49 @@ class AetherUI:
 
         def do_save():
             try:
-                cfg["llama"]["context"] = int(fields["context"].get())
-                cfg["llama"]["gpu_layers"] = int(fields["gpu_layers"].get())
-                cfg["llama"]["threads"] = int(fields["threads"].get())
+                pending = copy.deepcopy(cfg)
+                pending["llama"]["context"] = int(fields["context"].get())
+                pending["llama"]["gpu_layers"] = int(fields["gpu_layers"].get())
+                pending["llama"]["threads"] = int(fields["threads"].get())
                 batch_parts = [x.strip() for x in fields["batch"].get().split("/")]
-                cfg["llama"]["batch"] = int(batch_parts[0])
-                cfg["llama"]["ubatch"] = int(batch_parts[1]) if len(batch_parts) > 1 else cfg["llama"]["ubatch"]
-                cfg["llama"]["kv_cache_type"] = fields["kv_cache"].get().strip()
-                cfg["llama"]["adaptive_context"] = bool(fields["adaptive_context"].get())
-                cfg["generation"]["max_tokens"] = int(fields["max_tokens"].get())
-                cfg["generation"]["coding_max_tokens"] = int(fields["coding_max_tokens"].get())
-                cfg["generation"]["coding_temperature"] = float(fields["coding_temperature"].get())
-                cfg["generation"]["max_continuations"] = max(0, int(fields["continuations"].get()))
-                cfg["generation"]["temperature"] = float(fields["temperature"].get())
-                cfg["memory"]["history_turns"] = max(1, int(fields["history_turns"].get()))
-                cfg["memory"]["retrieval_chunks"] = max(1, int(fields["retrieval_chunks"].get()))
-                cfg["memory"]["max_context_chars"] = max(1000, int(fields["max_context_chars"].get()))
-                cfg["learning"]["enabled"] = bool(fields["learning_enabled"].get())
-                cfg["learning"]["auto_learn"] = bool(fields["auto_learn"].get())
-                cfg["learning"]["max_rules"] = max(1, int(fields["max_rules"].get()))
-                cfg["learning"]["feedback_enabled"] = bool(fields["feedback_learning"].get())
-                cfg["documents"]["ocr_enabled"] = bool(fields["ocr_enabled"].get())
-                cfg["documents"]["max_pages"] = max(1, int(fields["max_pages"].get()))
-                cfg["documents"]["soffice"] = fields["soffice"].get().strip()
-                cfg["safety"]["allow_external_research"] = bool(fields["allow_research"].get())
-                cfg["safety"]["allow_imap_read"] = bool(fields["allow_imap"].get())
-                cfg["safety"]["confirm_writes"] = bool(fields["confirm_writes"].get())
-                cfg["index"]["folders"] = [x.strip() for x in folders.get("1.0", "end").splitlines() if x.strip()]
-                cfg["voice"]["wake_word"] = fields["wake_word"].get().strip().lower()
+                pending["llama"]["batch"] = int(batch_parts[0])
+                pending["llama"]["ubatch"] = int(batch_parts[1]) if len(batch_parts) > 1 else pending["llama"]["ubatch"]
+                pending["llama"]["kv_cache_type"] = fields["kv_cache"].get().strip()
+                pending["llama"]["adaptive_context"] = bool(fields["adaptive_context"].get())
+                pending["generation"]["max_tokens"] = int(fields["max_tokens"].get())
+                pending["generation"]["coding_max_tokens"] = int(fields["coding_max_tokens"].get())
+                pending["generation"]["coding_temperature"] = float(fields["coding_temperature"].get())
+                pending["generation"]["max_continuations"] = max(0, int(fields["continuations"].get()))
+                pending["generation"]["temperature"] = float(fields["temperature"].get())
+                pending["memory"]["history_turns"] = max(1, int(fields["history_turns"].get()))
+                pending["memory"]["retrieval_chunks"] = max(1, int(fields["retrieval_chunks"].get()))
+                pending["memory"]["max_context_chars"] = max(1000, int(fields["max_context_chars"].get()))
+                pending["learning"]["enabled"] = bool(fields["learning_enabled"].get())
+                pending["learning"]["auto_learn"] = bool(fields["auto_learn"].get())
+                pending["learning"]["max_rules"] = max(1, int(fields["max_rules"].get()))
+                pending["learning"]["feedback_enabled"] = bool(fields["feedback_learning"].get())
+                pending["documents"]["ocr_enabled"] = bool(fields["ocr_enabled"].get())
+                pending["documents"]["max_pages"] = max(1, int(fields["max_pages"].get()))
+                pending["documents"]["soffice"] = fields["soffice"].get().strip()
+                pending["safety"]["allow_external_research"] = bool(fields["allow_research"].get())
+                pending["safety"]["allow_imap_read"] = bool(fields["allow_imap"].get())
+                pending["safety"]["confirm_writes"] = bool(fields["confirm_writes"].get())
+                pending["index"]["folders"] = [x.strip() for x in folders.get("1.0", "end").splitlines() if x.strip()]
+                pending["voice"]["wake_word"] = fields["wake_word"].get().strip().lower()
                 md = fields["mic_device"].get().strip()
-                cfg["voice"]["mic_device"] = int(md) if md.isdigit() else None
-                cfg["voice"]["tts_enabled"] = bool(fields["tts_enabled"].get())
-                cfg["voice"]["stream_tts"] = bool(fields["stream_tts"].get())
-                cfg["voice"]["auto_start"] = bool(fields["voice_auto"].get())
-                cfg["voice"]["always_listen"] = bool(fields["always_listen"].get())
-                cfg["voice"]["continuous"] = bool(fields["continuous"].get())
-                cfg["voice"]["followup_timeout_s"] = float(fields["followup_timeout"].get())
-                cfg["idle"]["timeout_s"] = float(fields["idle_timeout"].get())
-                cfg["idle"]["lazy_model"] = bool(fields["lazy_model"].get())
-                cfg["idle"]["unload_model_after_s"] = float(fields["unload_after"].get())
-                cfg["utcp"]["enabled"] = bool(fields["utcp_enabled"].get())
-                cfg["generation"]["research_max_tokens"] = int(fields["research_max"].get())
-                save(cfg)
+                pending["voice"]["mic_device"] = int(md) if md.isdigit() else None
+                pending["voice"]["tts_enabled"] = bool(fields["tts_enabled"].get())
+                pending["voice"]["stream_tts"] = bool(fields["stream_tts"].get())
+                pending["voice"]["auto_start"] = bool(fields["voice_auto"].get())
+                pending["voice"]["always_listen"] = bool(fields["always_listen"].get())
+                pending["voice"]["continuous"] = bool(fields["continuous"].get())
+                pending["voice"]["followup_timeout_s"] = float(fields["followup_timeout"].get())
+                pending["idle"]["timeout_s"] = float(fields["idle_timeout"].get())
+                pending["idle"]["lazy_model"] = bool(fields["lazy_model"].get())
+                pending["idle"]["unload_model_after_s"] = float(fields["unload_after"].get())
+                pending["utcp"]["enabled"] = bool(fields["utcp_enabled"].get())
+                pending["generation"]["research_max_tokens"] = int(fields["research_max"].get())
+                save(pending)
                 win.destroy()
                 messagebox.showinfo("Settings", "Saved. Settings for the running model require a restart.", parent=self.root)
             except ValueError as e:

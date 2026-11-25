@@ -170,10 +170,32 @@ class LlamaServer:
         self.stop()
         raise LLMError(f"llama-server did not become ready in {timeout}s.\n{self._log_tail()}")
 
-    def start(self, progress: Callable[[str], None] | None = None) -> Path:
+    def attached_model(self) -> Path | None:
+        for endpoint in ("/props", "/v1/models"):
+            try:
+                r = requests.get(f"{self.base_url}{endpoint}", timeout=2.0, proxies=LOCAL)
+                if r.status_code != 200:
+                    continue
+                data = r.json()
+                if endpoint == "/props":
+                    candidate = data.get("model_path") or data.get("model")
+                else:
+                    items = data.get("data") or []
+                    candidate = items[0].get("id") if items else None
+                if isinstance(candidate, str) and candidate:
+                    p = Path(candidate).expanduser()
+                    if not p.is_absolute():
+                        p = ROOT / p
+                    p = p.resolve()
+                    return p if p.exists() or str(p).lower().endswith((".gguf", ".bin")) else None
+            except (requests.RequestException, ValueError, OSError, IndexError, AttributeError):
+                continue
+        return None
+
+    def start(self, progress: Callable[[str], None] | None = None) -> Path | None:
         with self._lock:
             if self.health():
-                self.active_model = resolve(get("model.primary"))
+                self.active_model = self.attached_model()
                 self.context = self._running_context() or int(get("llama.context", 8192))
                 return self.active_model
             cfg = load()

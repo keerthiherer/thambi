@@ -18,6 +18,10 @@ def _cli(module: str = "chat", listen: bool = False) -> int:
     print("THAMBI CLI - private local assistant. /help for commands, /exit to quit.")
     if module == "research":
         print("Research mode active - ask reasoning questions about research, projects, hackathons.")
+    if module == "paper":
+        print("Paper mode active - outline, review, and write Overleaf-ready research papers.")
+    if module == "rd":
+        print("R&D mode active - plan studies, experiments, and publication-ready findings.")
     server = LlamaServer()
     if not server.health():
         print("Starting llama.cpp ...")
@@ -132,7 +136,8 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="thambi", description="THAMBI private offline assistant")
     ap.add_argument("--cli", action="store_true", help="text-only interface")
     ap.add_argument("--module", default="chat",
-                    choices=["chat", "research", "coding", "ece", "desktop", "ceo", "psychology", "hr"],
+                    choices=["chat", "research", "coding", "ece", "desktop", "ceo", "psychology", "hr",
+                             "paper", "rd"],
                     help="CLI module (default chat)")
     ap.add_argument("--listen", action="store_true", help="always-on 'Hey Thambi' hot word in CLI")
     ap.add_argument("--utcp", action="store_true", help="run the UTCP tool gateway and exit on Ctrl+C")

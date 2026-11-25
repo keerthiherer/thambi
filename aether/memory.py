@@ -355,15 +355,19 @@ class Memory:
             self._conn.commit()
             return doc_id
 
-    def remove_missing_documents(self, existing: set[str]) -> int:
+    def remove_missing_documents(self, existing: set[str], scanned_roots: list[str] | None = None) -> int:
+        from .retrieval import _under_any
         removed = 0
         with self._lock:
             rows = self._conn.execute("SELECT id, path FROM documents").fetchall()
             for r in rows:
-                if r["path"] not in existing:
-                    self._conn.execute("DELETE FROM chunks_fts WHERE doc_id=?", (r["id"],))
-                    self._conn.execute("DELETE FROM documents WHERE id=?", (r["id"],))
-                    removed += 1
+                if r["path"] in existing:
+                    continue
+                if scanned_roots and not _under_any(r["path"], scanned_roots):
+                    continue
+                self._conn.execute("DELETE FROM chunks_fts WHERE doc_id=?", (r["id"],))
+                self._conn.execute("DELETE FROM documents WHERE id=?", (r["id"],))
+                removed += 1
             self._conn.commit()
         return removed
 

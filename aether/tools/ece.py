@@ -109,14 +109,15 @@ def _led(supply_v=None, forward_v=None, current_ma=None, vs=None, vf=None, i_ma=
       "A=(I/(k*dT^0.44))^(1/0.725), width=A/(oz*1.378)", "IPC-2221")
 def _trace(current_a=None, temp_rise_c=10, copper_oz=1, internal=False, i=None, current=None, temp_rise=None, dt=None, oz=None):
     current_a = current_a if current_a is not None else (i if i is not None else current)
-    temp_rise_c = temp_rise_c if temp_rise is None and dt is None else (temp_rise if temp_rise is not None else dt)
+    if temp_rise_c is None:
+        temp_rise_c = temp_rise if temp_rise is not None else dt
     copper_oz = copper_oz if oz is None else oz
     if current_a is None:
         raise ValueError("current_a required")
     i_val, dt_val, oz_val = _f(current_a, "current_a"), _f(temp_rise_c, "temp_rise_c"), _f(copper_oz, "copper_oz")
     if i_val <= 0 or dt_val <= 0 or oz_val <= 0:
         raise ValueError("current, temperature rise and copper weight must be > 0")
-    k = 0.048 if (internal is True or str(internal).lower() in ("1", "true", "yes")) else 0.024
+    k = 0.024 if (internal is True or str(internal).lower() in ("1", "true", "yes")) else 0.048
     area_mil2 = (i_val / (k * dt_val ** 0.44)) ** (1 / 0.725)
     width_mil = area_mil2 / (oz_val * 1.378)
     return {

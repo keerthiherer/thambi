@@ -2,7 +2,7 @@
 
 **THAMBI** is a lightweight, private, offline-first AI engineering and CEO assistant running 100% locally on your machine (**ASUS TUF F15, Windows 11, 8GB RAM, NVIDIA RTX 2050**).
 
-It combines local quantized LLM inference via `llama.cpp`, offline wake-word speech recognition and TTS, persistent SQLite full-text memory, safe Windows desktop automation, ECE/PCB/RF engineering tools, Office generation, CEO productivity modules, a deep **Research mode**, and a local **UTCP** tool gateway.
+It combines local quantized LLM inference via `llama.cpp`, offline wake-word speech recognition and TTS, persistent SQLite full-text memory, safe Windows desktop automation, ECE/PCB/RF engineering tools, Office generation, CEO productivity modules, a deep **Research mode**, a **Research Paper & R&D Studio** with Overleaf-ready LaTeX, and a local **UTCP** tool gateway.
 
 ### Always-on hot word + ultra-low idle
 
@@ -72,6 +72,11 @@ For a terminal-only conversational interface:
 Research mode with always-on hot word in the terminal:
 ```powershell
 .\.venv\Scripts\python.exe -m aether --cli --module research --listen
+```
+Research-paper or R&D mode in the terminal:
+```powershell
+.\.venv\Scripts\python.exe -m aether --cli --module paper
+.\.venv\Scripts\python.exe -m aether --cli --module rd
 ```
 Run the UTCP tool gateway standalone:
 ```powershell
@@ -177,6 +182,32 @@ Novelty and patent outputs are technical landscape scans only. They are not lega
 
 ---
 
+## Research Paper & R&D Studio
+
+Switch to **Paper** or **R&D** in the GUI, use `/paper <topic>` or `/rd <topic>`, or launch with `--module paper` / `--module rd`. Every claim must be tied to a verified source handle or to a result produced by your own method; the tools never invent titles, authors, DOIs, venues, or numbers.
+
+| Tool / command | Purpose |
+|---|---|
+| `paper_lookup` | Verbatim Crossref metadata (title, authors, venue, year, DOI, URL) after external-access approval |
+| `paper_outline` | IMRaD outline with research questions, contributions, evidence ledger, and section targets |
+| `literature_review` | Themed claim/source/domain matrix with evidence gaps and contradiction cues |
+| `paper_study_design` | Hypotheses, variables, metrics, sample size, statistical plan, validity threats, and reproducibility controls |
+| `latex_paper` | Compile-ready Overleaf LaTeX (`IEEEtran`, `acmart`, `article`) with escaped text and bibliography wiring |
+| `latex_check` | Static check for braces, environments, math delimiters, labels/refs, and bibliography |
+| `bibtex_builder` | Valid BibTeX from supplied metadata only; missing fields are reported, never invented |
+| `paper_review` | Deterministic reviewer-style critique with severity ratings and concrete fixes |
+| `paper_project_export` | Overleaf-ready folder: `main.tex`, `references.bib`, outline, study design, literature matrix, and check report |
+
+Example:
+```text
+/tool latex_paper {"title":"Latency in Async Systems","authors":"A. Author; B. Writer","abstract":"...","sections":[{"title":"Method","content":"We measured 100 runs, 50% load."}],"style":"ieee"}
+/tool paper_project_export {"path":"data/drafts/my_paper","title":"Latency in Async Systems","question":"How does the event loop affect p95 latency?","style":"ieee"}
+```
+
+The generated check report is static analysis only: compile on Overleaf with pdfLaTeX and have a human reviewer verify truth, statistics, and venue policy before submission.
+
+---
+
 ## Auto Cleaner
 
 Click **Auto Clean** in the top-right of the GUI, or call `cleanup_cache`, to preview and remove cache/temporary artifacts. It clears `__pycache__`, `.pyc`, `.pytest_cache`, `.aether.tmp`/`.aether.bak`/`.aether.log` files, stale LibreOffice profiles, temporary voice recordings, and tool scratch files.
@@ -235,6 +266,8 @@ All outputs are labelled as non-clinical and evidence-limited. They do not diagn
 |---|---|
 | `/help` | Show command reference |
 | `/research <question>` | Deep research mode: reasoning, tradeoffs, experiments, project and hackathon plans |
+| `/paper <topic>` | Research-paper writing and literature-review mode |
+| `/rd <topic>` | R&D planning and experiment-design mode |
 | `/psych <message>` | Emotion-aware reflection and coaching mode |
 | `/coach <goal>` | GROW coaching-plan mode |
 | `/hr <situation>` or `/people <situation>` | HR and people-operations mode |

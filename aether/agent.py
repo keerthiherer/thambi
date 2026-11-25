@@ -157,20 +157,39 @@ MODULES = {
         "build plan with a demo narrative, tech stack, timeboxes, and judging-criteria alignment. Be rigorous, "
         "specific, and honest about uncertainty. Never invent papers, citations, results, or company facts."
     ),
+    "paper": (
+        "Academic writing and literature-review partner. Use paper_lookup for real bibliographic metadata, "
+        "literature_review to organise verified [S#] sources, paper_outline for IMRaD structure, "
+        "paper_study_design for rigorous methods, bibtex_builder for verified references, latex_paper and "
+        "latex_check for Overleaf-ready LaTeX, and paper_review for draft critique. Export a full project with "
+        "paper_project_export only when asked. Never invent papers, authors, DOIs, venues, or results; mark "
+        "unverified placeholders and tie every claim to a source handle or your own artifact. Separate evidence, "
+        "inference, and speculation, and write concise, reviewer-ready prose."
+    ),
+    "rd": (
+        "R&D lead for research-paper projects. Frame the problem, scan prior art and patents with prior_art_search "
+        "and patent_search, design hypotheses and experiments with paper_study_design and experiment_designer, "
+        "score options with decision_matrix, and turn findings into publishable claims with paper_outline, "
+        "literature_review, and latex_paper. Label heuristic estimates as advisory, state assumptions and "
+        "tradeoffs, define success metrics and stop/go gates, and never claim novelty or patentability without "
+        "verified evidence."
+    ),
 }
 
 
 MODULE_CATEGORIES = {
-    "chat": ["files", "memory", "coding", "research", "innovation", "documents", "opencode", "learning"],
-    "coding": ["coding", "research", "innovation", "files", "memory", "opencode", "learning"],
-    "ece": ["ece", "research", "innovation", "files", "memory", "documents", "opencode", "learning"],
-    "desktop": ["desktop", "research", "innovation", "files", "memory", "documents", "opencode", "learning"],
-    "ceo": ["ceo", "research", "innovation", "office", "files", "memory", "documents", "opencode", "learning"],
-    "designer": ["designer", "research", "innovation", "documents", "files", "opencode", "memory", "learning"],
-    "voice": ["research", "innovation", "files", "memory", "ece", "ceo", "desktop", "opencode", "learning"],
-    "psychology": ["psychology", "research", "innovation", "documents", "memory", "opencode", "learning"],
-    "hr": ["hr", "psychology", "research", "innovation", "office", "documents", "memory", "opencode", "learning"],
-    "research": ["research", "innovation", "files", "memory", "coding", "ece", "opencode", "documents", "learning"],
+    "chat": ["files", "memory", "coding", "research", "innovation", "documents", "opencode", "learning", "paper"],
+    "coding": ["coding", "research", "innovation", "files", "memory", "opencode", "learning", "paper"],
+    "ece": ["ece", "research", "innovation", "files", "memory", "documents", "opencode", "learning", "paper"],
+    "desktop": ["desktop", "research", "innovation", "files", "memory", "documents", "opencode", "learning", "paper"],
+    "ceo": ["ceo", "research", "innovation", "office", "files", "memory", "documents", "opencode", "learning", "paper"],
+    "designer": ["designer", "research", "innovation", "documents", "files", "opencode", "memory", "learning", "paper"],
+    "voice": ["research", "innovation", "files", "memory", "ece", "ceo", "desktop", "opencode", "learning", "paper"],
+    "psychology": ["psychology", "research", "innovation", "documents", "memory", "opencode", "learning", "paper"],
+    "hr": ["hr", "psychology", "research", "innovation", "office", "documents", "memory", "opencode", "learning", "paper"],
+    "research": ["research", "innovation", "files", "memory", "coding", "ece", "opencode", "documents", "learning", "paper"],
+    "paper": ["paper", "research", "innovation", "documents", "files", "memory", "opencode", "learning"],
+    "rd": ["paper", "research", "innovation", "files", "memory", "documents", "opencode", "learning"],
 }
 
 
@@ -255,7 +274,10 @@ def _stream_answer(messages: list[dict], on_token: Callable[[str], None] | None,
         finish = resp.get("finish_reason")
         if resp.get("stopped") or (stop_event is not None and stop_event.is_set()):
             break
-        if finish != "length" or attempt >= max_continuations or len(piece.strip()) < 120:
+        unfinished_tool = (finish == "length" and "```tool" in piece
+                           and not re.search(r"```tool\b.*?```", piece, re.S))
+        if (finish != "length" or attempt >= max_continuations
+                or (len(piece.strip()) < 120 and not unfinished_tool)):
             break
         used = int((usage.get("prompt_tokens") or 0) + (usage.get("completion_tokens") or 0))
         remaining = context - used - 256
@@ -384,6 +406,8 @@ class ChatEngine:
                 args = json.loads(payload) if payload else {}
             except json.JSONDecodeError:
                 return {"text": "Usage: /tool <name> {\"arg\":\"value\"}", "sources": [], "command": True}
+            if not isinstance(args, dict):
+                return {"text": "Tool arguments must be a JSON object.", "sources": [], "command": True}
             return self._command_tool(name, args)
         if cmd == "clear":
             self.session_id = uuid.uuid4().hex[:12]
@@ -415,7 +439,7 @@ class ChatEngine:
         else:
             mode_switches = (
                 ("/psychology", "psychology"), ("/psych", "psychology"), ("/coach", "psychology"),
-                ("/hr", "hr"), ("/people", "hr"),
+                ("/hr", "hr"), ("/people", "hr"), ("/paper", "paper"), ("/rd", "rd"),
             )
             for prefix, target in mode_switches:
                 if research.lower().startswith(prefix):
@@ -459,6 +483,9 @@ class ChatEngine:
         elif module in ("psychology", "hr"):
             gen_kwargs["max_tokens"] = int(get("generation.research_max_tokens", 3000))
             gen_kwargs["temperature"] = 0.35
+        elif module in ("paper", "rd"):
+            gen_kwargs["max_tokens"] = int(get("generation.research_max_tokens", 3000))
+            gen_kwargs["temperature"] = float(get("generation.research_temperature", 0.3))
         messages = prepare_context(messages, max_tokens=gen_kwargs.get("max_tokens"), context=context)
 
         self.mem.add_message(self.session_id, "user", user_text)
@@ -469,7 +496,7 @@ class ChatEngine:
         usage: dict = {}
         finish = None
         max_continuations = max(0, int(get("generation.max_continuations", 1)))
-        max_rounds = 5 if module in ("coding", "research", "designer", "psychology", "hr") else 3
+        max_rounds = 5 if module in ("coding", "research", "designer", "psychology", "hr", "paper", "rd") else 3
         for rnd in range(max_rounds):
             if stop_event is not None and stop_event.is_set():
                 break
@@ -579,6 +606,8 @@ class ChatEngine:
 
 HELP = """/help            this help
 /research <q>    deep research mode for research, projects, hackathons
+/paper <topic>   research-paper writing and literature-review mode
+/rd <topic>      R&D planning and experiment-design mode
 /psych <message> emotion-aware reflection and coaching mode
 /hr <situation>  HR and people-operations mode
 /coach <goal>    GROW coaching-plan mode

@@ -242,7 +242,14 @@ def kicad_inspect(path: str) -> str:
         info = _inspect_sch(p, root)
     else:
         info = _inspect_pcb(p, root)
-    return json.dumps(info, indent=2, ensure_ascii=False)[:24000]
+    bom = info.get("bom") if isinstance(info, dict) else None
+    if isinstance(bom, list) and len(bom) > 400:
+        info["bom"] = bom[:400]
+        notes = info.get("notes")
+        info["notes"] = (list(notes) if isinstance(notes, list) else []) + [
+            f"BOM truncated to 400 of {len(bom)} entries."
+        ]
+    return json.dumps(info, indent=2, ensure_ascii=False)
 
 
 def _kicad_cli() -> str | None:

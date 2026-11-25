@@ -115,9 +115,16 @@ def create_pptx(path: str, title: str, slides) -> str:
     s.shapes.title.text = title
     if len(s.placeholders) > 1:
         s.placeholders[1].text = "Prepared with THAMBI"
-    for item in slides or []:
+    slide_items = slides or []
+    if isinstance(slide_items, (dict, str)):
+        slide_items = [slide_items]
+    if not isinstance(slide_items, (list, tuple)):
+        raise ValueError("slides must be a list of slide objects or titles")
+    for item in slide_items:
         if isinstance(item, str):
             item = {"title": item, "bullets": []}
+        if not isinstance(item, dict):
+            raise ValueError("each slide must be an object or title")
         sl = prs.slides.add_slide(prs.slide_layouts[1])
         sl.shapes.title.text = str(item.get("title", ""))
         body = sl.placeholders[1].text_frame
@@ -127,7 +134,7 @@ def create_pptx(path: str, title: str, slides) -> str:
             para.text = str(b)
             para.level = 0
     prs.save(str(p))
-    return f"Created {p} ({len(slides or []) + 1} slides)"
+    return f"Created {p} ({len(slide_items) + 1} slides)"
 
 
 @register("create_pdf", "Create a PDF from plain text after confirmation.",
@@ -147,11 +154,15 @@ def create_pdf(path: str, title: str, content: str) -> str:
     _confirm_write(p, "PDF")
     p.parent.mkdir(parents=True, exist_ok=True)
     styles = getSampleStyleSheet()
-    doc = SimpleDocTemplate(str(p), pagesize=A4, margins=(18 * mm, 18 * mm, 18 * mm, 18 * mm))
-    story = [Paragraph(title, styles["Title"]), Spacer(1, 8)]
+    doc = SimpleDocTemplate(str(p), pagesize=A4,
+                            leftMargin=18 * mm, rightMargin=18 * mm,
+                            topMargin=18 * mm, bottomMargin=18 * mm)
+    def _esc(value: str) -> str:
+        return str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    story = [Paragraph(_esc(title), styles["Title"]), Spacer(1, 8)]
     for line in content.splitlines():
         if line.strip():
-            story.append(Paragraph(line.replace("&", "&amp;").replace("<", "&lt;"), styles["BodyText"]))
+            story.append(Paragraph(_esc(line), styles["BodyText"]))
             story.append(Spacer(1, 4))
     doc.build(story)
     return f"Created {p}"

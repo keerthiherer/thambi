@@ -55,6 +55,8 @@ def execute(name: str, args: dict[str, Any] | None = None, allow_dangerous: bool
     tool = REGISTRY.get(name)
     if not tool:
         return _error(f"Unknown tool '{name}'. Available: {', '.join(sorted(REGISTRY))}", "UnknownTool")
+    if args is not None and not isinstance(args, dict):
+        return _error("Tool arguments must be a JSON object", "InvalidArguments")
     args = {_normalize_key(k): v for k, v in (args or {}).items() if _normalize_key(k)}
     unknown = sorted(k for k in args if k not in tool.args)
     if unknown:
@@ -137,8 +139,7 @@ def _iter_json_blocks(text: str, start_tag: str, end_tag: str):
         if not raw:
             tail = text[m.end():]
             end = re.search(re.escape(end_tag), tail, re.IGNORECASE)
-            if end:
-                raw = tail[:end.start()].strip()
+            raw = tail[:end.start()].strip() if end else tail.strip()
         key = " ".join(raw.split())
         if raw.startswith("{") and key not in seen:
             seen.add(key)
@@ -311,15 +312,52 @@ def _clean_value(value: Any) -> Any:
     return value
 
 
+_TRAILING_COLON_KEY = re.compile(r'"([A-Za-z_][A-Za-z0-9_.-]*):\s*"\s*:')
+
+
+def _balanced_json_shell(text: str) -> bool:
+    depth = 0
+    in_string = False
+    escaped = False
+    for ch in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch in "{[":
+            depth += 1
+        elif ch in "}]":
+            depth -= 1
+            if depth < 0:
+                return False
+    return depth == 0 and not in_string
+
+
 def _parse_block(raw: str) -> dict:
     loose = False
     try:
-        obj = json.loads(_repair_json(raw))
+        obj = json.loads(_TRAILING_COLON_KEY.sub(r'"\1":', raw))
     except (json.JSONDecodeError, ValueError):
-        loose = True
-        obj = _loose_object(raw)
-    if loose and re.search(r":\s*[,}]", _repair_json(raw)):
-        raise ValueError("Malformed tool JSON: empty value")
+        try:
+            obj = json.loads(_repair_json(raw))
+        except (json.JSONDecodeError, ValueError):
+            loose = True
+            obj = _loose_object(raw)
+    if loose:
+        if not _balanced_json_shell(raw):
+            raise ValueError("Malformed tool JSON: unbalanced braces or string")
+        if not re.search(r'"name"\s*:\s*"[A-Za-z][A-Za-z0-9_]*"', raw):
+            raise ValueError("Malformed tool JSON: tool name is missing or invalid")
+        if re.search(r'"\s+"', raw):
+            raise ValueError("Malformed tool JSON: missing comma between values")
+        if re.search(r":\s*[,}]", _repair_json(raw)):
+            raise ValueError("Malformed tool JSON: empty value")
     if not isinstance(obj, dict):
         raise ValueError("tool call must be a JSON object")
     args = obj.get("args")
@@ -375,4 +413,4 @@ def tool_parse_errors(text: str) -> list[str]:
 
 
 # Import modules so their decorators run.
-from . import devtools, files, coding, desktop, office, ece, kicad, ceo, research, utcp_tools, learning_tools, opencode_tools, documents, designer, psychology, innovation  # noqa: E402,F401
+from . import devtools, files, coding, desktop, office, ece, kicad, ceo, research, utcp_tools, learning_tools, opencode_tools, documents, designer, psychology, innovation, papers  # noqa: E402,F401

@@ -152,7 +152,7 @@ DEFAULTS: dict[str, Any] = {
 
 _lock = threading.RLock()
 _config: dict[str, Any] | None = None
-_config_mtime: float = 0.0
+_config_fingerprint: tuple[int, int, int] = (0, 0, 0)
 
 
 def _merge(base: dict, over: dict) -> dict:
@@ -165,37 +165,49 @@ def _merge(base: dict, over: dict) -> dict:
     return out
 
 
+def _fingerprint() -> tuple[int, int, int]:
+    try:
+        st = CONFIG_PATH.stat()
+        return (st.st_mtime_ns, st.st_size, st.st_ino)
+    except OSError:
+        return (0, 0, 0)
+
+
 def load() -> dict[str, Any]:
-    global _config, _config_mtime
+    global _config, _config_fingerprint
     with _lock:
-        try:
-            mt = CONFIG_PATH.stat().st_mtime
-        except OSError:
-            mt = 0
-        if _config is None or mt != _config_mtime:
+        current = _fingerprint()
+        if _config is None or current != _config_fingerprint:
             if CONFIG_PATH.exists():
                 with CONFIG_PATH.open("r", encoding="utf-8") as f:
                     user = json.load(f)
             else:
                 user = {}
-            _config = _merge(DEFAULTS, user)
-            _config_mtime = mt
+            fresh = _merge(DEFAULTS, user)
+            if _config is None:
+                _config = fresh
+            else:
+                _config.clear()
+                _config.update(fresh)
+            _config_fingerprint = current
         return _config
 
 
 def save(cfg: dict[str, Any]) -> None:
-    global _config, _config_mtime
+    global _config, _config_fingerprint
     with _lock:
         CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
         tmp = CONFIG_PATH.with_suffix(".tmp")
         with tmp.open("w", encoding="utf-8") as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
         os.replace(tmp, CONFIG_PATH)
-        _config = cfg
-        try:
-            _config_mtime = CONFIG_PATH.stat().st_mtime
-        except OSError:
-            _config_mtime = 0
+        snapshot = copy.deepcopy(cfg)
+        if _config is None:
+            _config = snapshot
+        else:
+            _config.clear()
+            _config.update(snapshot)
+        _config_fingerprint = _fingerprint()
 
 
 def get(path: str, default: Any = None) -> Any:

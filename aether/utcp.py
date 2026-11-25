@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -55,6 +56,7 @@ def call_local(name: str, args: dict[str, Any] | None = None,
 
 
 def fetch_manual(url: str, timeout: float = 15.0, token: str = "") -> dict:
+    url = safety.validate_http_url(url, "UTCP manual URL")
     headers = {"Accept": "application/json", "User-Agent": "THAMBI-utcp/0.1"}
     if token:
         headers["X-UTCP-Token"] = token
@@ -73,7 +75,7 @@ def call_remote(manual_url: str, tool_name: str, args: dict[str, Any] | None = N
     if confirm and not safety.require_external(
         "allow_external_research", "Call external UTCP tool?",
         f"Manual: {manual_url}\nTool: {tool_name}\nArgs: {json.dumps(args or {}, ensure_ascii=False)[:800]}\n\n"
-        "Only the tool arguments are sent; no local files or credentials are included.",
+        "Only the tool arguments and any explicitly supplied token are sent; local files and the local UTCP token are not included.",
     ):
         raise PermissionError("External UTCP call denied")
     manual = fetch_manual(manual_url, token=token)
@@ -88,7 +90,7 @@ def call_remote(manual_url: str, tool_name: str, args: dict[str, Any] | None = N
     provider = target.get("tool_provider") or {}
     if str(provider.get("provider_type", "")).lower() != "http":
         raise ValueError(f"Unsupported UTCP provider type: {provider.get('provider_type')}")
-    endpoint = provider.get("url") or manual_url
+    endpoint = safety.validate_http_url(str(provider.get("url") or manual_url), "UTCP provider URL")
     headers = {"Content-Type": "application/json", "Accept": "application/json"}
     if token:
         headers["X-UTCP-Token"] = token
@@ -172,6 +174,16 @@ class _Handler(BaseHTTPRequestHandler):
                          "result": result.get("result"), "error": result.get("error")})
 
 
+def _is_loopback(host: str) -> bool:
+    host = (host or "").strip().lower().rstrip(".")
+    if host in ("", "localhost", "127.0.0.1", "::1", "ip6-localhost", "ip6-loopback"):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
 class UtcpServer:
     def __init__(self, host: str | None = None, port: int | None = None) -> None:
         self.host = host or str(get("utcp.host", "127.0.0.1"))
@@ -183,6 +195,13 @@ class UtcpServer:
     def start(self) -> str:
         if self._httpd is not None:
             return self.url
+        if not _is_loopback(self.host):
+            if not bool(get("utcp.allow_remote", False)):
+                raise PermissionError(
+                    "Binding UTCP to a non-loopback host requires utcp.allow_remote=true"
+                )
+            if not str(get("utcp.token", "") or ""):
+                raise PermissionError("Binding UTCP to a non-loopback host requires utcp.token")
         self._httpd = _UtcpHTTPServer((self.host, self.port), _Handler, self)
         actual = int(self._httpd.server_address[1])
         self.url = f"http://{self.host}:{actual}"
